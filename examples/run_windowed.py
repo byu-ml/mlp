@@ -1,6 +1,6 @@
 import argparse
 from mlp import util
-from mlp import NeuralNet
+from rnn import WindowedMLP
 
 
 def get_sets(S, _dir, _ext, name=None):
@@ -28,6 +28,7 @@ def parse_args(_args=None):
     parser.add_argument('--train', '-Tr', nargs="+", help='training set data files')
     parser.add_argument('--test', '-Ts', nargs="+", help='test set data files')
     parser.add_argument('--validation', '-V', nargs="*", help='validation set data files')
+    parser.add_argument('--window', '-w', nargs="+", type=int, help='window to use')
     parser.add_argument('--learning_rate', '-l', type=float, default=.9, help='learning rate to use')
     parser.add_argument('--max_epochs', '-e', type=int, default=1000, help='maximum number of epochs to allow')
     parser.add_argument('--patience', '-p', type=int, default=20, help='patience param')
@@ -42,7 +43,7 @@ if __name__ == '__main__':
     train = get_sets(args.train, args.dir, args.ext, "Training")
     test = get_sets(args.test, args.dir, args.ext, "Test")
     validation = get_sets(args.validation, args.dir, args.ext, "Validation")
-    model = NeuralNet(args.num_features, args.num_hidden, args.num_classes,
+    model = WindowedMLP(args.num_features, args.num_hidden, args.num_classes,
                       validation_set=validation, multi_vsets=True,
                       max_epochs=args.max_epochs, patience=args.patience, learning_rate=args.learning_rate)
     num_epochs = model.fit(train[0], train[1], True)
