@@ -1,6 +1,6 @@
 import argparse
 from mlp import util
-from rnn import WindowedMLP
+from rnn import BPTT
 
 
 def get_sets(S, _dir, _ext, name=None):
@@ -20,19 +20,21 @@ def get_sets(S, _dir, _ext, name=None):
 
 def parse_args(_args=None):
     parser = argparse.ArgumentParser(description='Run a multilayer perceptron via vector operations')
-    parser.add_argument('--num_features', '-f', type=int, default=4, help='number of features')
-    parser.add_argument('--num_classes', '-c', type=int, default=2, help='number of output classes')
-    parser.add_argument('--num_hidden', '-H', type=int, default=20, help='number of hidden nodes to use')
-    parser.add_argument('-dir', default="", help='if specified, prepends all the data files with this string')
-    parser.add_argument('-ext', default="", help='if specified, appends all the data files with this string')
-    parser.add_argument('--train', '-Tr', nargs="+", help='training set data files')
-    parser.add_argument('--test', '-Ts', nargs="+", help='test set data files')
-    parser.add_argument('--validation', '-V', nargs="*", help='validation set data files')
-    parser.add_argument('--window', '-w', nargs="+", type=int, help='window to use')
+    parser.add_argument('--num_features', '-f', type=int, default=6, help='number of features')
+    parser.add_argument('--num_classes', '-c', type=int, default=7, help='number of output classes')
+    parser.add_argument('--num_hidden', '-H', type=int, default=40, help='number of hidden nodes to use')
+    parser.add_argument('-dir', default="../experiments/data/pills/pills_0", help='if specified, prepends all the data files with this string')
+    parser.add_argument('-ext', default=".txt", help='if specified, appends all the data files with this string')
+    parser.add_argument('--train', '-Tr', nargs="+", default=["1", "2", "6", "7"], help='training set data files')
+    parser.add_argument('--test', '-Ts', nargs="+", default=["3", "4", "5"], help='test set data files')
+    parser.add_argument('--validation', '-V', nargs="*", default=["8", "9"], help='validation set data files')
     parser.add_argument('--learning_rate', '-l', type=float, default=.9, help='learning rate to use')
     parser.add_argument('--max_epochs', '-e', type=int, default=1000, help='maximum number of epochs to allow')
     parser.add_argument('--patience', '-p', type=int, default=20, help='patience param')
-    parser.add_argument('--out', '-o', help='The output directory to save results to')
+    parser.add_argument('--k_back', '-kb', type=int, default=1, help='k back param')
+    parser.add_argument('--k_forward', '-kf', type=int, default=1, help='k forward param')
+    parser.add_argument('--out', '-o', default="../experiments/results/bptt.txt",
+                        help='The output directory to save results to')
     if _args is None:
         return parser.parse_args()
     return parser.parse_args(_args)
@@ -40,13 +42,13 @@ def parse_args(_args=None):
 
 if __name__ == '__main__':
     args = parse_args()
-    print("arg window:", args.window)
     train = get_sets(args.train, args.dir, args.ext, "Training")
     test = get_sets(args.test, args.dir, args.ext, "Test")
     validation = get_sets(args.validation, args.dir, args.ext, "Validation")
-    model = WindowedMLP(args.num_features, args.num_hidden, args.num_classes, window=args.window,
-                      validation_set=validation, multi_vsets=True,
-                      max_epochs=args.max_epochs, patience=args.patience, learning_rate=args.learning_rate)
+    model = BPTT(args.num_features, args.num_hidden, args.num_classes,
+                 validation_set=validation, multi_vsets=True,
+                 k_back=args.k_back, k_forward=args.k_forward,
+                 max_epochs=args.max_epochs, patience=args.patience, learning_rate=args.learning_rate)
     num_epochs = model.fit(train[0], train[1], True)
     score = model.score(test[0], test[1], multi_sets=True)
     print("accuracy:", score)

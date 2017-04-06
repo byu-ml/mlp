@@ -77,12 +77,6 @@ class WindowedMLP(NeuralNet):
         for i, j in idx:
             y2.append(y[i][j])
         y2 = np.array(y2)
-        # if multi_sets:
-        #     y2 = y[0]
-        #     for yi in y[1:]:
-        #         y2 = np.vstack((y2, yi))
-        # else:
-        #     y2 = y
         predicted = self.predict(X, multi_sets)
         return accuracy_score(y2, predicted, sample_weight=sample_weight)
 
