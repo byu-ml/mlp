@@ -24,9 +24,13 @@ class BPTT(NeuralNet):
         if u_back and k_back > 0:
             self.Ub = self.recurrent_matrix(*u_back)
             self.δb = self.delta_vecs(u_back, k_back)
+            self.Zb = self.Z_vecs(hidden, k_back)
+            self.Zin_b = self.Z_vecs(features, k_back)
         if u_forward and k_forward > 0:
             self.Uf = self.recurrent_matrix(*u_forward)
             self.δf = self.delta_vecs(u_forward, k_forward)
+            self.Zf = self.Z_vecs(hidden, k_forward)
+            self.Zin_f = self.Z_vecs(features, k_forward)
         super().__init__(features, hidden, classes, learning_rate, a_func, max_epochs, patience, validation_set,
                          multi_vsets, classification)
         # overwrite W so there's only one
@@ -90,32 +94,32 @@ class BPTT(NeuralNet):
 
     def _forward_prop_tt(self, Xi, j):
         # initial activation of hidden layer
-        self.Z[1] = np.ones(len(self.Z[1]))
+        self.Z[1] = np.ones(self.Z[1].shape)
         self.Z[1] *= .0001
         # backwards t
-        if self.Ub:
+        if self.Ub is not None:
             t = self._k
-            while t > 0:
-                x = Xi[j-t]
+            for i in range(self._k):
+                x = Xi[j-t+i]
                 xt = x.reshape(1, len(x))
-                self.Z[1][slice(*self._v)] = self.activation(xt.dot(self.V) + self.b[0][slice(*self._v)])
-                self.Z[1][slice(*self._hb)] = self.activation(self.Z[1][slice(*self._hb)].dot(self.Ub) +
-                                                              self.b[0][slice(*self._hb)])
-                t -= 1
+                self.Zin_b[i] = xt
+                self.Z[1][:,slice(*self._v)] += self.activation(xt.dot(self.V) + self.b[0][:, slice(*self._v)])
+                self.Z[1][:,slice(*self._hb)] += self.activation(self.Z[1][:,slice(*self._hb)].dot(self.Ub) +
+                                                               self.b[0][:,slice(*self._hb)])
+                self.Zb[i] = self.Z[1].copy()
         # t == 0
         x = Xi[j]
-        x0 = x.reshape(1, len(x))
-        self.Z[1][slice(*self._v)] = self.activation(x0.dot(self.V) + self.b[0][slice(*self._v)])
+        self.x0 = x.reshape(1, len(x))
+        self.Z[1][:,slice(*self._v)] += self.activation(self.x0.dot(self.V) + self.b[0][:,slice(*self._v)])
         # forwards t
-        if self.Uf:
-            t = 1
-            while t <= self._j:
-                x = Xi[j+t]
+        if self.Uf is not None:
+            for i in range(self._j):
+                x = Xi[j+i+1]
                 xt = x.reshape(1, len(x))
-                self.Z[1][slice(*self._v)] = self.activation(xt.dot(self.V) + self.b[0][slice(*self._v)])
-                self.Z[1][slice(*self._hf)] = self.activation(self.Z[1][slice(*self._hf)].dot(self.Ub) +
-                                                              self.b[0][slice(*self._hf)])
-                t += 1
+                self.Z[1][:,slice(*self._v)] += self.activation(xt.dot(self.V) + self.b[0][:,slice(*self._v)])
+                self.Z[1][:,slice(*self._hf)] += self.activation(self.Z[1][:,slice(*self._hf)].dot(self.Ub) +
+                                                                 self.b[0][:,slice(*self._hf)])
+                self.Zf[i] = self.Z[1].copy()
         # output layer
         self.Z[-1] = self.activation(self.Z[-2].dot(self.W) + self.b[-1])
         return self.Z[-1][0]
@@ -124,18 +128,60 @@ class BPTT(NeuralNet):
         # output layer's delta: δ = (T-Z) * f'(net)
         self.δ[-1] = (y - self.Z[-1]) * self.f_prime(self.Z[-1])
         # compute deltas: δj = Σ[δk*Wjk] * f'(net)
-        # for i in range(self.num_layers-2, 0, -1):
-        #         self.δ[i-1] = np.tensordot(self.δ[i], self.W[i], (1, 1)) \
-        #                       * self.f_prime(self.Z[i])
+        self.δ[0] = np.zeros(self.δ[0].shape)  # initially clear
+        # t backwards
+        if self.Ub is not None:
+            self.δb[-1] = np.tensordot(self.δ[-1], self.W, (1, 1))[:,slice(*self._hb)] * self.f_prime(self.Zb[-1][:,slice(*self._hb)])
+            for i in range(self._k-1, 0, -1):
+                self.δb[i-1] = np.tensordot(self.δb[i], self.Ub, (1, 1)) * self.f_prime(self.Zb[i][:,slice(*self._hb)])
+        # t == 0
+        self.δ[0][:,slice(*self._v)] = np.tensordot(self.δ[-1], self.W, (1, 1))[:,slice(*self._v)] * self.f_prime(self.Z[1][:,slice(*self._v)])
+        # t forwards
+        if self.Uf is not None:
+            self.δf[-1] = np.tensordot(self.δ[-1], self.W, (1, 1))[:,slice(*self._hf)] * self.f_prime(self.Zf[-1][:,slice(*self._hf)])
+            for i in range(self._j-1, 0, -1):
+                self.δf[i-1] = np.tensordot(self.δf[i], self.Uf, (1, 1)) * self.f_prime(self.Zf[i][:,slice(*self._hf)])
 
         # update weights: ΔWij = C*δj*Zi
         # output layer
-        self.W += self.C * np.outer(self.Z[-1], self.δ[-1])
+        self.W += self.C * np.outer(self.Z[1], self.δ[-1])
         self.b[-1] += self.C * self.δ[-1]
-        # for i in range(self.num_layers-2, -1, -1):
-        #     # Note since δ,W,b are all of length: num_layers-1, layer(Z[i]) == layer(b[i+1])
-        #     self.W[i] += self.C * np.outer(self.Z[i], self.δ[i])
-        #     self.b[i] += self.C * self.δ[i]
+        # recurrent layers
+        ΔV = np.zeros(self.V.shape)
+        nv = np.zeros(self.V.shape)
+        Δb = np.zeros(self.b[0].shape)
+        nb = np.zeros(self.b[0].shape)
+        # backwards
+        if self.Ub is not None:
+            ΔUb = np.zeros(self.Ub.shape)
+            for i in range(self._k):
+                ΔUb += self.C * np.outer(self.Zb[i][:,slice(*self._hf)], self.δb[i])
+                ΔV[:,slice(*self._hb)] += self.C * np.outer(self.Zin_b[i], self.δb[i])
+                nv[:,slice(*self._hb)] += 1
+                Δb[:,slice(*self._hb)] += self.C * self.δb[i]
+                nb[:,slice(*self._hb)] += 1
+            ΔUb /= self._k
+            self.Ub += ΔUb
+        # t == 0
+        ΔV += self.C * np.outer(self.x0, self.δ[0][:,slice(*self._v)])
+        nv += 1
+        Δb[:,slice(*self._v)] += self.C * self.δ[0][:,slice(*self._v)]
+        nb[:,slice(*self._v)] += 1
+        # forwards
+        if self.Uf is not None:
+            ΔUf = np.zeros(self.Uf.shape)
+            for i in range(self._j):
+                ΔUf += self.C * np.outer(self.Zf[i][:,slice(*self._hf)], self.δf[i])
+                ΔV[:,slice(*self._hf)] += self.C * np.outer(self.Zin_f[i], self.δf[i])
+                nv[:,slice(*self._hf)] += 1
+                Δb[:,slice(*self._hf)] += self.C * self.δf[i]
+                nb[:,slice(*self._hf)] += 1
+            ΔUf /= self._j
+            self.Uf += ΔUf
+        ΔV /= nv
+        Δb = Δb / nb
+        self.V += ΔV
+        self.b[0] += Δb
 
     def recurrent_matrix(self, start, stop):
         _len = self.H[stop] - self.H[start]
@@ -152,3 +198,9 @@ class BPTT(NeuralNet):
         for i in range(k):
             δ.append(np.zeros(_len))
         return δ
+
+    def Z_vecs(self, hidden, k):
+        _Z = []
+        for i in range(k):
+            _Z.append(np.zeros(hidden))
+        return _Z
