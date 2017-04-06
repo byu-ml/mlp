@@ -7,8 +7,8 @@ from rnn import util
 
 
 class BPTT(NeuralNet):
-    def __init__(self, features=6, hidden=40, classes=7,
-                 u_back=(0, 15), u_forward=(-16, -1), v_range=(10, 30), k_back=1, k_forward=1,
+    def __init__(self, features=6, hidden=60, classes=7,
+                 u_back=(0, 20), u_forward=(-21, -1), v_range=(10, 50), k_back=1, k_forward=1,
                  learning_rate=0.9, a_func=Sigmoid, max_epochs=1000, patience=20,
                  validation_set=None, multi_vsets=False, classification=True):
         self.H = np.arange(hidden)
