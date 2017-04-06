@@ -40,10 +40,11 @@ def parse_args(_args=None):
 
 if __name__ == '__main__':
     args = parse_args()
+    print("arg window:", args.window)
     train = get_sets(args.train, args.dir, args.ext, "Training")
     test = get_sets(args.test, args.dir, args.ext, "Test")
     validation = get_sets(args.validation, args.dir, args.ext, "Validation")
-    model = WindowedMLP(args.num_features, args.num_hidden, args.num_classes,
+    model = WindowedMLP(args.num_features, args.num_hidden, args.num_classes, window=args.window,
                       validation_set=validation, multi_vsets=True,
                       max_epochs=args.max_epochs, patience=args.patience, learning_rate=args.learning_rate)
     num_epochs = model.fit(train[0], train[1], True)
